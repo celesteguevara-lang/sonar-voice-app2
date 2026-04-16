@@ -218,26 +218,26 @@ const runAnalysis = async () => {
 
     const systemPrompt = `Eres un ingeniero senior de audio de SteelSeries. Analiza este test de 7 fases. RESTRICCIONES TÉCNICAS: 1. COMPRESIÓN: Apagada (OFF). 2. NOISE GATE: Encendida en modo AUTOMÁTICO. 3. DATOS REALES CARGADOS: ${JSON.stringify(SONAR_PRESETS_DATABASE)} FILOSOFÍA DE AISLAMIENTO REAL (MÍNIMO 50%): - El aislamiento EFECTIVO en coworking empieza al 50%. - RANGO DE RECOMENDACIÓN: 50% a 85% máximo. IMPORTANTE SOBRE CUSTOMPOINTS: 'customPoints' debe ser el mismo array de ecualización del 'suggestedPreset' elegido (basado en los 14 perfiles), pero con los valores de ganancia ('g') modificados sutilmente por la IA para perfeccionar esta voz específica. JSON FORMAT: { "suggestedPreset": "Nombre oficial exacto", "customPoints": [{"p": 1, "g": 2.0, "f": 125, "q": 0.707}, ...], "scores": {"diction": 80, "fluidity": 75, "clarity": 70}, "suggestedClearCast": 50, "customClearCast": 65, "pureIaClearCast": 75, "smartVolume": "Medium", "sonarAdvice": "...", "personalTip": "..." }`;
     
-    // 1. EL PAYLOAD SE MANTIENE INTACTO
+    // Aseguramos que el tipo de audio sea válido
+    const audioMimeType = mimeTypeRef.current || "audio/webm";
+
     const payload = {
       contents: [{ role: "user", parts: [
-        { text: "Realiza la auditoría vocal." },
-        { inlineData: { mimeType: mimeTypeRef.current, data: base64Audio } }
+        { text: "Realiza la auditoría vocal. Devuelve el resultado ESTRICTAMENTE en el formato JSON solicitado." },
+        { inlineData: { mimeType: audioMimeType, data: base64Audio } }
       ]}],
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: { responseMimeType: "application/json" }
     };
 
-    // 2. MODELOS CON SOPORTE DE AUDIO (inlineData)
-    // gemini-2.0-flash está DEPRECATED — usamos 2.5-flash y 2.5-flash-lite
-    const models = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+    // Usamos v1beta que es más flexible con las funciones avanzadas
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
     let success = false;
     let parsedData = null;
 
     for (const modelName of models) {
       if (success) break;
 
-      // CRÍTICO: Audio inlineData SOLO funciona en /v1beta/ (no en /v1/)
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
       try {
@@ -248,13 +248,14 @@ const runAnalysis = async () => {
           body: JSON.stringify(payload)
         });
 
+        // Leemos la respuesta de Google ANTES de verificar si falló
+        const data = await res.json();
+
         if (!res.ok) {
-          const errText = await res.text();
-          console.warn(`${modelName} falló (Error ${res.status}): ${errText}. Intentando el siguiente...`);
+          // AHORA SÍ: Si falla, la consola nos dirá el motivo EXACTO de Google
+          console.error(`Google rechazó ${modelName} (Error ${res.status}):`, data.error?.message || data);
           continue; 
         }
-
-        const data = await res.json();
         
         if (data.candidates && data.candidates[0].content.parts[0].text) {
           const textResponse = data.candidates[0].content.parts[0].text;
@@ -263,17 +264,15 @@ const runAnalysis = async () => {
           success = true;
         }
       } catch (err) {
-        console.error(`Error de red con ${modelName}:`, err);
+        console.error(`Error de ejecución con ${modelName}:`, err);
       }
     }
 
-    // 4. MANEJO DE RESULTADOS
     if (success && parsedData) {
       setAnalysis(parsedData);
       setStep('results');
     } else {
-      // Si todo falla, mostramos el error detallado
-      setApiError("Error al conectar con la API de Gemini. Verifica que tu API Key sea válida y tenga permisos. Si el error persiste, intenta en unos minutos.");
+      setApiError("Error 400. Por favor, revisa la consola (F12) para ver el mensaje exacto que envió Google.");
       setStep('recording');
     }
     
