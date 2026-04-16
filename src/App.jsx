@@ -228,19 +228,20 @@ const runAnalysis = async () => {
       generationConfig: { responseMimeType: "application/json" }
     };
 
-    // 2. USAMOS LOS MODELOS NUEVOS DIRECTAMENTE
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+    // 2. MODELOS CON SOPORTE DE AUDIO (inlineData)
+    // gemini-2.0-flash está DEPRECATED — usamos 2.5-flash y 2.5-flash-lite
+    const models = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
     let success = false;
     let parsedData = null;
 
     for (const modelName of models) {
       if (success) break;
 
-      // 3. CAMBIO CRÍTICO: Usamos /v1/ en lugar de /v1beta/
-      const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
+      // CRÍTICO: Audio inlineData SOLO funciona en /v1beta/ (no en /v1/)
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
       try {
-        console.log(`Conectando con ${modelName} en v1...`);
+        console.log(`Conectando con ${modelName} en v1beta...`);
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -248,7 +249,8 @@ const runAnalysis = async () => {
         });
 
         if (!res.ok) {
-          console.warn(`${modelName} falló (Error ${res.status}). Intentando el siguiente...`);
+          const errText = await res.text();
+          console.warn(`${modelName} falló (Error ${res.status}): ${errText}. Intentando el siguiente...`);
           continue; 
         }
 
@@ -270,8 +272,8 @@ const runAnalysis = async () => {
       setAnalysis(parsedData);
       setStep('results');
     } else {
-      // Si todo falla (probablemente un 503 por saturación), le avisamos al usuario
-      setApiError("Los servidores de IA están saturados en este momento. Por favor, intenta de nuevo en unos minutos.");
+      // Si todo falla, mostramos el error detallado
+      setApiError("Error al conectar con la API de Gemini. Verifica que tu API Key sea válida y tenga permisos. Si el error persiste, intenta en unos minutos.");
       setStep('recording');
     }
     
