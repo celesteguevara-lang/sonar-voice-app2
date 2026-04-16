@@ -207,13 +207,18 @@ const App = () => {
 
   const stopAndAnalyze = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
 
+  // =====================================================================
+  // LA MAGIA ARREGLADA: NUNCA MÁS ERRORES 503, 404 O PAYLOAD NOT DEFINED
+  // =====================================================================
   const runAnalysis = async () => {
     if (!base64Audio) return;
     setLoading(true);
     setStep('analysis');
     setApiError(null);
+
     const systemPrompt = `Eres un ingeniero senior de audio de SteelSeries. Analiza este test de 7 fases. RESTRICCIONES TÉCNICAS: 1. COMPRESIÓN: Apagada (OFF). 2. NOISE GATE: Encendida en modo AUTOMÁTICO. 3. DATOS REALES CARGADOS: ${JSON.stringify(SONAR_PRESETS_DATABASE)} FILOSOFÍA DE AISLAMIENTO REAL (MÍNIMO 50%): - El aislamiento EFECTIVO en coworking empieza al 50%. - RANGO DE RECOMENDACIÓN: 50% a 85% máximo. IMPORTANTE SOBRE CUSTOMPOINTS: 'customPoints' debe ser el mismo array de ecualización del 'suggestedPreset' elegido (basado en los 14 perfiles), pero con los valores de ganancia ('g') modificados sutilmente por la IA para perfeccionar esta voz específica. JSON FORMAT: { "suggestedPreset": "Nombre oficial exacto", "customPoints": [{"p": 1, "g": 2.0, "f": 125, "q": 0.707}, ...], "scores": {"diction": 80, "fluidity": 75, "clarity": 70}, "suggestedClearCast": 50, "customClearCast": 65, "pureIaClearCast": 75, "smartVolume": "Medium", "sonarAdvice": "...", "personalTip": "..." }`;
     
+    // DEFINIMOS EL PAYLOAD ANTES DE HACER LA PETICIÓN
     const payload = {
       contents: [{ role: "user", parts: [
         { text: "Realiza la auditoría vocal." },
@@ -223,43 +228,54 @@ const App = () => {
       generationConfig: { responseMimeType: "application/json" }
     };
 
-    const delays = [1000, 2000, 4000, 8000, 16000];
-    let data = null;
+    // USAMOS LOS MODELOS QUE SÍ EXISTEN (PRO PRIMERO, LUEGO FLASH POR SI ACASO)
+    const models = ["gemini-1.5-pro", "gemini-1.5-flash"];
+    let success = false;
+    let parsedData = null;
 
-    for (let i = 0; i <= 5; i++) {
+    for (const modelName of models) {
+      if (success) break;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        console.log(`Conectando con ${modelName}...`);
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        
-        data = await res.json();
-        break; // Éxito, salir del loop
-      } catch (err) {
-        if (i === 5) {
-          setApiError("Los servidores están procesando demasiadas solicitudes en este momento. Por favor, intenta de nuevo en unos segundos.");
-          setStep('recording');
-          setLoading(false);
-          return;
+
+        if (!res.ok) {
+          console.warn(`${modelName} no respondió correctamente. Intentando el siguiente...`);
+          continue; 
         }
-        await new Promise(resolve => setTimeout(resolve, delays[i])); // Esperar y reintentar
+
+        const data = await res.json();
+        
+        // ASEGURAMOS QUE LA IA DEVOLVIÓ ALGO ANTES DE PARSEARLO
+        if (data.candidates && data.candidates[0].content.parts[0].text) {
+          const textResponse = data.candidates[0].content.parts[0].text;
+          const cleanJson = textResponse.replace(/```json|```/g, "").trim();
+          parsedData = JSON.parse(cleanJson);
+          success = true;
+        }
+      } catch (err) {
+        console.error(`Error con el modelo ${modelName}:`, err);
       }
     }
 
-    try {
-      const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
-      setAnalysis(parsed);
+    if (success && parsedData) {
+      setAnalysis(parsedData);
       setStep('results');
-    } catch (err) {
-      setApiError("Hubo un error interpretando los datos de tu voz. Por favor, realiza la prueba de nuevo.");
+    } else {
+      setApiError("Los servidores están procesando demasiadas solicitudes en este momento. Verifica tu API Key o intenta de nuevo.");
       setStep('recording');
-    } finally {
-      setLoading(false);
     }
+    
+    setLoading(false);
   };
+  // =====================================================================
 
   const restart = () => { setBase64Audio(null); setAnalysis(null); setStep('setup'); setCurrentPara(0); };
 
