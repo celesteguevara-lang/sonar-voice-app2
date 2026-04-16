@@ -13,7 +13,7 @@ import {
 // IMPORTAMOS LOS ESTILOS SEPARADOS DESDE TU NUEVO ARCHIVO
 import { ESTILOS } from './styles';
 
-const apiKey = "AIzaSyBFyQCQueVEyLN6pcd1YP-n0vhSL1ukeyA";
+const apiKey = "AIzaSyBFyQCQueVEyLN6pcd1YP-n0vhSL1ukeyAAQ.Ab8RN6LSQw56N3CZ3wyVYDbq1gjjxkBlDzhg4bKJtpjhxqKG2w";
 
 const SONAR_PRESETS_DATABASE = {
   "Custom": [
@@ -228,7 +228,7 @@ const App = () => {
 
     for (let i = 0; i <= 5; i++) {
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
